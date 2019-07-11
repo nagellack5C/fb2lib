@@ -92,7 +92,7 @@ def parse_book(book, location):
         with open("log.txt", "a") as log:
             log.write(f"{location} ::: {e}\n")
 
-
+# for later use, handling malformed files
 def parse_book_alt(book):
     book.seek(0)
     first_line = str(book.readline(), encoding="utf-8")
@@ -107,6 +107,9 @@ def parse_book_alt(book):
             break
     desc = str(desc, encoding=encoding) + "</FictionBook>"
     print(desc)
+
+
+# ----------- SERVICE FUNCTIONS ----------- #
 
 
 def testing(book):
