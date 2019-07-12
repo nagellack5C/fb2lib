@@ -7,6 +7,7 @@ import gzip
 import zipfile
 import time
 from threading import Thread
+from db_operator import adder
 
 # ----------- PARSING MANAGERS ----------- #
 
@@ -47,19 +48,33 @@ def parse_manager():
         if i.endswith((".fb2", ".fb2.gz")):
             # print(i)
             with open_book(i) as book:
-                books_found.append(parse_book(book, i))
+                parsed_book = parse_book(book, i)
+                if parsed_book:
+                    books_found.append(parsed_book)
         elif i.endswith(".fb2.zip"):
             # print(i)
             zipped_books = zipfile.ZipFile(i)
             for name in zipped_books.namelist():
                 # print(name)
                 with zipped_books.open(name) as zbook:
-                    books_found.append(parse_book(zbook, i + f" >>> {name}"))
+                    parsed_book = parse_book(zbook, i + f" >>> {name}")
+                    if parsed_book:
+                        books_found.append(parsed_book)
+        if len(books_found) > 999:
+            adder(books_found, args["update"])
+            books_found = []
+    adder(books_found, args["update"])
+
 
 book_infos = []
 
 def parse_book(book, location):
-    book_info = {}
+    # print(location)
+    book_info = {
+        "author": "",
+        "title": "",
+        "date": ""
+    }
     global counter
 
     try:
@@ -69,7 +84,7 @@ def parse_book(book, location):
                 children = elem.getchildren()
                 for child in children:
                     if child.tag.endswith("author"):
-                        book_info["author"] = {
+                        author = {
                             "first-name": "",
                             "middle-name": "",
                             "last-name": "",
@@ -77,17 +92,28 @@ def parse_book(book, location):
                         }
                         for name in child.getchildren():
                             name_kind = re.match('\{.*\}(.*)', name.tag).group(1)
-                            if name_kind in book_info["author"]:
-                                book_info["author"][name_kind] = name.text
+                            if name_kind in author:
+                                author[name_kind] = name.text
+                        author_name = []
+                        names = ["first-name", "middle-name", "last-name"]
+                        for name in names:
+                            if author[name]:
+                                author_name.append(author[name])
+                        if not author_name and author["nickname"]:
+                            author_name = author["nickname"]
+                        book_info["author"] = " ".join(author_name)
                     if child.tag.endswith("book-title"):
-                        book_info["title"] = child.text
+                        book_info["title"] = child.text if child.text else ""
                     if child.tag.endswith("date"):
-                        book_info["date"] = child.text
+                        book_info["date"] = child.text if child.text else ""
                 counter += 1
                 if counter % 1000 == 0:
                     print(counter)
                     # print(book_info)
                 break
+        book_info = (book_info["author"], book_info["title"], book_info["date"])
+        # print(book_info)
+        return book_info
     except Exception as e:
         with open("log.txt", "a") as log:
             log.write(f"{location} ::: {e}\n")
