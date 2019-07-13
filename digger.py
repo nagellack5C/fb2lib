@@ -18,8 +18,9 @@ path_group.add_argument("-a", dest="bookpath")
 parser.add_argument("-u", dest="update", action="store_true")
 args = vars(parser.parse_args())
 
-
 counter = 0
+
+NAME_TYPES = ("first-name", "middle-name", "last-name", "nickname")
 
 @contextmanager
 def open_book(path):
@@ -66,58 +67,17 @@ def parse_manager():
     adder(books_found, args["update"])
 
 
-book_infos = []
-
 def parse_book(book, location):
-    # print(location)
-    book_info = {
-        "author": "",
-        "title": "",
-        "date": ""
-    }
-    global counter
-
     try:
         for event, elem in etree.iterparse(book, events=("end",)):
             # print(elem)
             if event == "end" and "title-info" in elem.tag:
-                children = elem.getchildren()
-                for child in children:
-                    if child.tag.endswith("author"):
-                        author = {
-                            "first-name": "",
-                            "middle-name": "",
-                            "last-name": "",
-                            "nickname": ""
-                        }
-                        for name in child.getchildren():
-                            name_kind = re.match('\{.*\}(.*)', name.tag).group(1)
-                            if name_kind in author:
-                                author[name_kind] = name.text
-                        author_name = []
-                        names = ["first-name", "middle-name", "last-name"]
-                        for name in names:
-                            if author[name]:
-                                author_name.append(author[name])
-                        if not author_name and author["nickname"]:
-                            author_name = author["nickname"]
-                        book_info["author"] = " ".join(author_name)
-                    if child.tag.endswith("book-title"):
-                        book_info["title"] = child.text if child.text else ""
-                    if child.tag.endswith("date"):
-                        book_info["date"] = child.text if child.text else ""
-                counter += 1
-                if counter % 1000 == 0:
-                    print(counter)
-                    # print(book_info)
-                break
-        book_info = (book_info["author"], book_info["title"], book_info["date"])
-        # print(book_info)
-        return book_info
+                return parse_book_as_xml(elem.getchildren())
     except Exception as e:
         # parse_malformed_book (idealy)
         with open("log.txt", "a") as log:
             log.write(f"{location} ::: {e}\n")
+
 
 # for later use, handling malformed files
 def parse_malformed_book(book):
@@ -134,6 +94,33 @@ def parse_malformed_book(book):
             break
     desc = str(desc, encoding=encoding) + "</FictionBook>"
     print(desc)
+
+
+# ----------- HELPER FUNCTIONS ----------- #
+
+
+def parse_book_as_xml(children):
+    book_info = {
+        "author": "",
+        "title": "",
+        "date": ""
+    }
+    global counter
+
+    for child in children:
+        if child.tag.endswith("author"):
+            book_info["author"] = " ".join([name.text for nt in NAME_TYPES
+                                            for name in child.getchildren()
+                                            if name.tag.endswith(nt)
+                                            and name.text])
+        if child.tag.endswith("book-title"):
+            book_info["title"] = child.text if child.text else ""
+        if child.tag.endswith("date"):
+            book_info["date"] = child.text if child.text else ""
+    counter += 1
+    if counter % 1000 == 0:
+        print(counter)
+    return (book_info["author"], book_info["title"], book_info["date"])
 
 
 # ----------- SERVICE FUNCTIONS ----------- #
@@ -153,8 +140,8 @@ def timer():
 
 if __name__ == "__main__":
     start = time.time()
-    x = Thread(target=timer, daemon=True)
-    x.start()
+    # x = Thread(target=timer, daemon=True)
+    # x.start()
     parse_manager()
 
     print(f"Time elapsed: {time.time() - start}")
