@@ -115,11 +115,12 @@ def parse_book(book, location):
         # print(book_info)
         return book_info
     except Exception as e:
+        # parse_malformed_book (ideally)
         with open("log.txt", "a") as log:
             log.write(f"{location} ::: {e}\n")
 
 # for later use, handling malformed files
-def parse_book_alt(book):
+def parse_malformed_book(book):
     book.seek(0)
     first_line = str(book.readline(), encoding="utf-8")
     print(first_line)
