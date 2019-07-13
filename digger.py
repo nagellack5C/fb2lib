@@ -43,7 +43,7 @@ def parse_manager():
     elif args["bookpath"]:
         files = [args["bookpath"]]
     else:
-        raise AttributeError("Include -s or -a flag into your call")
+        raise AttributeError("Include -s or -a flag into your calll")
     for i in files:
         if i.endswith((".fb2", ".fb2.gz")):
             # print(i)
@@ -115,7 +115,7 @@ def parse_book(book, location):
         # print(book_info)
         return book_info
     except Exception as e:
-        # parse_malformed_book (ideally)
+        # parse_malformed_book (idealy)
         with open("log.txt", "a") as log:
             log.write(f"{location} ::: {e}\n")
 
