@@ -1,3 +1,8 @@
+'''
+Reads command line arguments and calls the deleting function.
+'''
+
+
 from argparse import ArgumentParser
 from db_operator import deleter
 
