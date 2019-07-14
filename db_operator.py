@@ -22,15 +22,17 @@ def connect(create=None):
 
 
 def adder(books_found, update):
+    print(f"adding {len(books_found)} records...")
     conn, cursor = connect()
     # print(books_found)
 
-    print(update)
+    # print(update)
     if update:
         cursor.executemany("INSERT OR ROLLBACK INTO books(name, title, date) VALUES (?,?,?)", books_found)
     else:
         cursor.executemany("INSERT INTO books(name, title, date) VALUES (?,?,?)", books_found)
     conn.commit()
+    conn.close()
 
 def seek_book(args):
     conn, cursor = connect()
