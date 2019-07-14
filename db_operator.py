@@ -2,9 +2,13 @@ import sqlite3
 
 
 def connect(create=None):
+    '''
+    Connects to database, creates new table if passed a create parameter
+    :param create: if True, a new table is created
+    :return: connection and cursor
+    '''
     conn = sqlite3.connect("mydatabase.sqlite")
     cursor = conn.cursor()
-
     if create:
         # cursor.execute("""CREATE TABLE books
         #                    (title TEXT, first_name TEXT, middle_name TEXT, last_name TEXT,
@@ -12,52 +16,71 @@ def connect(create=None):
         #                """)
 
         cursor.execute("""CREATE TABLE books
-                                   (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                                   title TEXT, name TEXT, date INT)
-                               """)
-
+                          (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                          str_repr TEXT,
+                           author TEXT, title TEXT, bookdate INT)
+                       """)
         conn.commit()
+    return conn, cursor
 
-    return (conn, cursor)
 
-
-def adder(books_found, update):
-    print(f"adding {len(books_found)} records...")
+def get_reprs():
+    '''
+    Returns all string representations as a set to enable updating
+    '''
     conn, cursor = connect()
-    # print(books_found)
+    return set([i[0] for i in cursor.execute("SELECT str_repr FROM books")])
 
-    # print(update)
-    if update:
-        cursor.executemany("INSERT OR ROLLBACK INTO books(name, title, date) VALUES (?,?,?)", books_found)
-    else:
-        cursor.executemany("INSERT INTO books(name, title, date) VALUES (?,?,?)", books_found)
+
+def adder(books_found):
+    '''
+    Writes found books to the database
+    :param books_found: list/set of books parsed
+    '''
+    if isinstance(books_found, set):
+        books_found = list(books_found)
+    print(f"Добавляем {len(books_found)} записей... ", end="")
+    conn, cursor = connect()
+    cursor.executemany("INSERT INTO books(str_repr, author, title, bookdate)"
+                       "VALUES (?,?,?,?)",
+                       books_found)
     conn.commit()
     conn.close()
+    print("готово!")
+
 
 def seek_book(args):
+    '''
+    Constructs a query that selects books from the database according to the
+    user-defined criteria.
+    :param args: user-defined arguments
+    :return: list of books that match the request
+    '''
     conn, cursor = connect()
-    print(args)
-
     new_args = []
-
     query = "SELECT * FROM books WHERE "
     q_vals = []
-    # values = " VALUES ("
-    for arg in ["name", "title", "date"]:
+    for arg in ["author", "title", "bookdate"]:
         if args[arg]:
             q_vals.append(f"{arg} = ?")
             new_args.append(args[arg])
     new_args = tuple(new_args)
-    # values += ",".join(["?" for i in q_vals]) + ")"
     query = query + " AND ".join(q_vals)
-    print(query)
-    print(new_args)
-
     cursor.execute(query, new_args)
-    for i in cursor.fetchall():
-        print(i)
+    result = cursor.fetchall()
+    if result:
+        for i in result:
+            print(f"{i[2]}: {i[3]}, {i[4] if i[4] else 'Дата неизвестна'},"
+                  f"номер: {i[0]}")
+    else:
+        print("Нет результатов. Попробуйте другой запрос")
+
 
 def deleter(args):
+    '''
+    Deletes one or all books from the database.
+    :param args: user-defined arguments
+    '''
     conn, cursor = connect()
 
     if args["number"]:
@@ -66,20 +89,6 @@ def deleter(args):
         cursor.execute("DELETE FROM books")
     conn.commit()
 
-def flush():
-    conn = sqlite3.connect("mydatabase.sqlite")
-    cursor = conn.cursor()
-    cursor.execute("DROP TABLE books")
-    conn.commit()
 
-
-# Вставляем множество данных в таблицу используя безопасный метод "?"
-# albums = [('Exodus', 'Andy Hunter', '7/9/2002', 'Sparrow Records', 'CD'),
-#           ('Until We Have Faces', 'Red', '2/1/2011', 'Essential Records', 'CD'),
-#           ('The End is Where We Begin', 'Thousand Foot Krutch', '4/17/2012', 'TFKmusic', 'CD'),
-#           ('The Good Life', 'Trip Lee', '4/10/2012', 'Reach Records', 'CD')]
-#
-# cursor.executemany("INSERT INTO albums VALUES (?,?,?,?,?)", albums)
 if __name__ == "__main__":
-    # flush()
     connect(create=True)
