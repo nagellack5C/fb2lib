@@ -8,8 +8,12 @@ import zipfile
 import time
 from threading import Thread
 from db_operator import adder
+import tracemalloc
+import gc
 
 # ----------- PARSING MANAGERS ----------- #
+
+tracemalloc.start()
 
 parser = ArgumentParser()
 path_group = parser.add_mutually_exclusive_group()
@@ -31,10 +35,14 @@ def open_book(path):
     yield book
     book.close()
 
+def packer(book):
+    books = yield
+    while True:
+        books.append(book)
 
-def parse_manager():
-    books_found = []
-
+def parseman_gen(test_path=None):
+    if test_path:
+        args["dirpath"] = test_path
     if args["dirpath"]:
         files = []
         walk_gen = os.walk(args["dirpath"])
@@ -44,39 +52,72 @@ def parse_manager():
     elif args["bookpath"]:
         files = [args["bookpath"]]
     else:
-        raise AttributeError("Include -s or -a flag into your calll")
+        raise AttributeError("Include -s or -a flag into your call")
     for i in files:
         if i.endswith((".fb2", ".fb2.gz")):
             # print(i)
             with open_book(i) as book:
-                parsed_book = parse_book(book, i)
-                if parsed_book:
-                    books_found.append(parsed_book)
+                yield parse_book(book, i)
         elif i.endswith(".fb2.zip"):
-            # print(i)
             zipped_books = zipfile.ZipFile(i)
             for name in zipped_books.namelist():
-                # print(name)
                 with zipped_books.open(name) as zbook:
-                    parsed_book = parse_book(zbook, i + f" >>> {name}")
-                    if parsed_book:
-                        books_found.append(parsed_book)
-        if len(books_found) > 999:
-            adder(books_found, args["update"])
-            books_found = []
-    adder(books_found, args["update"])
+                    yield parse_book(zbook, i + f" >>> {name}")
+            zipped_books.close()
+
+
+def parse_manager(test_path=None):
+    pg = parseman_gen(test_path)
+    bf = []
+    for pb in pg:
+        if pb:
+            bf.append(pb)
+        if len(bf) > 1000:
+            print("wtf")
+
+            # gc.collect()
+            snapshot = tracemalloc.take_snapshot()
+            top_stats = snapshot.statistics('lineno')
+
+            print("[ Top 10 ]")
+            for stat in top_stats[:10]:
+                print(stat)
+            adder(bf, args["update"])
+            del bf
+            bf = []
+    adder(bf, args["update"])
+    # bf = [pb for pb in pg if pb]
+    # adder(bf, args["update"])
 
 
 def parse_book(book, location):
-    try:
+        print(location)
+    # try:
+        # context = iter(etree.iterparse(book, events=("end",)))
+        # _, root = next(context)
+        # print("root: ", next(etree.iterparse(book)))
+        # print("root: ", root)
+        result = ""
         for event, elem in etree.iterparse(book, events=("end",)):
-            # print(elem)
-            if event == "end" and "title-info" in elem.tag:
-                return parse_book_as_xml(elem.getchildren())
-    except Exception as e:
-        # parse_malformed_book (idealy)
-        with open("log.txt", "a") as log:
-            log.write(f"{location} ::: {e}\n")
+            # print("elem: ", elem)
+            if event == "end" and "title-info" in elem.tag and not result:
+                # print(elem.getchildren())
+                result = parse_book_as_xml(elem.getchildren())
+                # etree.dump(root)
+                # root.clear()
+                # etree.dump(root)
+                # print(root.children())
+                # elem.clear()
+                # del context
+                book.seek(-14, 2)
+                print(book.tell())
+                print(book.read())
+        return result
+    # except Exception as e:
+    #     print(e)
+    #     # parse_malformed_book (ideally)
+    #     with open("log.txt", "a") as log:
+    #         log.write(f"{location} ::: {e}\n")
 
 
 # for later use, handling malformed files
@@ -106,6 +147,7 @@ def parse_book_as_xml(children):
         "date": ""
     }
     global counter
+    # print(counter)
 
     for child in children:
         if child.tag.endswith("author"):
@@ -117,9 +159,18 @@ def parse_book_as_xml(children):
             book_info["title"] = child.text if child.text else ""
         if child.tag.endswith("date"):
             book_info["date"] = child.text if child.text else ""
+        # child.clear()
     counter += 1
     if counter % 1000 == 0:
         print(counter)
+    # etree.dump(children)
+    # print(children)
+    # children.clear()
+    # print(children)
+    # etree.dump(children)
+    # print(book_info)
+
+
     return (book_info["author"], book_info["title"], book_info["date"])
 
 
@@ -138,11 +189,16 @@ def timer():
         print(time.time() - start)
 
 
+# ----------- TEST CONSTANTS ----------- #
+SMALLDIR = "C:\\Users\\fatsu\\PycharmProjects\\fb2lib\\test"
+BIGDIR = "C:\\Users\\fatsu\\Downloads\\_Lib.rus.ec - Официальная"
+
+
 if __name__ == "__main__":
     start = time.time()
-    # x = Thread(target=timer, daemon=True)
-    # x.start()
-    parse_manager()
+    x = Thread(target=timer, daemon=True)
+    x.start()
+    parse_manager(test_path=SMALLDIR)
 
     print(f"Time elapsed: {time.time() - start}")
 
