@@ -1,19 +1,16 @@
-import xml.etree.ElementTree as etree
 import re
 import os
-from argparse import ArgumentParser
-from contextlib import contextmanager
 import gzip
 import zipfile
 import time
-from threading import Thread
-from db_operator import adder
-import tracemalloc
-import gc
+from argparse import ArgumentParser
+from contextlib import contextmanager
+from xml.etree import ElementTree as etree
+from db_operator import adder, get_reprs
 
-# ----------- PARSING MANAGERS ----------- #
 
-tracemalloc.start()
+# ----------- SETUP ----------- #
+
 
 parser = ArgumentParser()
 path_group = parser.add_mutually_exclusive_group()
@@ -22,25 +19,21 @@ path_group.add_argument("-a", dest="bookpath")
 parser.add_argument("-u", dest="update", action="store_true")
 args = vars(parser.parse_args())
 
-counter = 0
-
 NAME_TYPES = ("first-name", "middle-name", "last-name", "nickname")
+DB_WRITING_THRESHOLD = 50000
+COUNTER_THRESHOLD = 10000
 
-@contextmanager
-def open_book(path):
-    if path.endswith(".fb2"):
-        book = open(path, 'rb')
-    else:
-        book = gzip.open(path)
-    yield book
-    book.close()
 
-def packer(book):
-    books = yield
-    while True:
-        books.append(book)
+# ----------- PARSING MANAGERS ----------- #
+
 
 def parseman_gen(test_path=None):
+    '''
+    A generator that iterates over all books in the user-defined path.
+    It is designed to yield one book at a time.
+    :param test_path: overrides all paths, is used for debugging from IDE.
+    :return: a single book file
+    '''
     if test_path:
         args["dirpath"] = test_path
     if args["dirpath"]:
@@ -52,10 +45,9 @@ def parseman_gen(test_path=None):
     elif args["bookpath"]:
         files = [args["bookpath"]]
     else:
-        raise AttributeError("Include -s or -a flag into your call")
+        raise AttributeError("Укажите флаг -s или -a")
     for i in files:
         if i.endswith((".fb2", ".fb2.gz")):
-            # print(i)
             with open_book(i) as book:
                 yield parse_book(book, i)
         elif i.endswith(".fb2.zip"):
@@ -67,121 +59,163 @@ def parseman_gen(test_path=None):
 
 
 def parse_manager(test_path=None):
+    '''
+    The primary function of this module. Iterates over parseman_gen
+    and inserts parsing results into database having collected more books
+    than set in DB_WRITING_THRESHOLD constant.
+    :param test_path: overrides all paths, is used for debugging from IDE.
+    '''
+    counter = 0
     pg = parseman_gen(test_path)
-    bf = []
-    for pb in pg:
-        if pb:
-            bf.append(pb)
-        if len(bf) > 1000:
-            print("wtf")
-
-            # gc.collect()
-            snapshot = tracemalloc.take_snapshot()
-            top_stats = snapshot.statistics('lineno')
-
-            print("[ Top 10 ]")
-            for stat in top_stats[:10]:
-                print(stat)
-            adder(bf, args["update"])
-            del bf
-            bf = []
-    adder(bf, args["update"])
-    # bf = [pb for pb in pg if pb]
-    # adder(bf, args["update"])
+    books_found = []  # will be a set if update flag is set
+    if args["update"]:
+        # loading single-string book representations into memory
+        # is used to check if book was already parsed
+        reprs = get_reprs()
+        books_found = set()
+    for parsed_book in pg:
+        counter += 1
+        if counter % COUNTER_THRESHOLD == 0:
+            print(counter)
+        if parsed_book:
+            # creating single-string book representation by joining all
+            # parsed info, then combining it with the parsed info for
+            # faster insertion
+            parsed_book = (" ".join([i for i in parsed_book]),) + parsed_book
+            if args["update"] and parsed_book[0] in reprs:
+                continue
+            books_found.add(parsed_book) if args["update"]\
+                else books_found.append(parsed_book)
+        if len(books_found) > DB_WRITING_THRESHOLD:
+            adder(books_found)
+            if args["update"]:
+                reprs.update(books_found)
+                books_found = set()
+            else:
+                books_found = []
+    adder(books_found)
 
 
 def parse_book(book, location):
-        print(location)
-    # try:
-        # context = iter(etree.iterparse(book, events=("end",)))
-        # _, root = next(context)
-        # print("root: ", next(etree.iterparse(book)))
-        # print("root: ", root)
+    '''
+    The general parsing function. Using ElementTree, locates 'title-info'
+    node in a book and calls the extraction function, then destroys the built
+    tree. Does not parse the whole book.
+    If an XML of the book appears to be broken, a special function is called
+    in the except block. If this function fails to parse, the error is
+    written into log.txt.
+    :param book: an opened file with a book
+    :param location: location of the book for logging and debugging purposes
+    :return: tuple with parsing results
+    '''
+    try:
+        context = iter(etree.iterparse(book, events=("end",)))
+        _, root = next(context)
         result = ""
-        for event, elem in etree.iterparse(book, events=("end",)):
-            # print("elem: ", elem)
+        for event, elem in context:
             if event == "end" and "title-info" in elem.tag and not result:
-                # print(elem.getchildren())
-                result = parse_book_as_xml(elem.getchildren())
-                # etree.dump(root)
-                # root.clear()
-                # etree.dump(root)
-                # print(root.children())
-                # elem.clear()
-                # del context
-                book.seek(-14, 2)
-                print(book.tell())
-                print(book.read())
+                result = parse_book_as_xml(list(elem))
+                root.clear()
+                break
         return result
-    # except Exception as e:
-    #     print(e)
-    #     # parse_malformed_book (ideally)
-    #     with open("log.txt", "a") as log:
-    #         log.write(f"{location} ::: {e}\n")
-
-
-# for later use, handling malformed files
-def parse_malformed_book(book):
-    book.seek(0)
-    first_line = str(book.readline(), encoding="utf-8")
-    print(first_line)
-    encoding = re.search('encoding="([^"]*?)"', first_line).group(1)
-    # print(encoding.group(1))
-
-    desc = b""
-    for i in book:
-        desc += i
-        if b"</title-info>" in i:
-            break
-    desc = str(desc, encoding=encoding) + "</FictionBook>"
-    print(desc)
+    except etree.ParseError:
+        return parse_malformed_book(book, location)
+    except Exception as e:
+        with open("log.txt", "a") as log:
+            log.write(f"{location} ::: {e}\n")
 
 
 # ----------- HELPER FUNCTIONS ----------- #
 
 
-def parse_book_as_xml(children):
-    book_info = {
-        "author": "",
-        "title": "",
-        "date": ""
-    }
-    global counter
-    # print(counter)
-
-    for child in children:
-        if child.tag.endswith("author"):
-            book_info["author"] = " ".join([name.text for nt in NAME_TYPES
-                                            for name in child.getchildren()
-                                            if name.tag.endswith(nt)
-                                            and name.text])
-        if child.tag.endswith("book-title"):
-            book_info["title"] = child.text if child.text else ""
-        if child.tag.endswith("date"):
-            book_info["date"] = child.text if child.text else ""
-        # child.clear()
-    counter += 1
-    if counter % 1000 == 0:
-        print(counter)
-    # etree.dump(children)
-    # print(children)
-    # children.clear()
-    # print(children)
-    # etree.dump(children)
-    # print(book_info)
+@contextmanager
+def open_book(path):
+    '''
+    Simple context manager that opens a book depending on its format.
+    :param path: path to book
+    :return: file stream
+    '''
+    if path.endswith(".fb2"):
+        book = open(path, 'rb')
+    else:
+        book = gzip.open(path)
+    yield book
+    book.close()
 
 
-    return (book_info["author"], book_info["title"], book_info["date"])
+def parse_book_as_xml(title_info):
+    '''
+    Tries parsing a book using a standard XML library.
+    :param title_info: the <title-info> node of the book
+    :return: tuple with parsing results
+    '''
+    author, title, date = "", "", ""
+    for node in title_info:
+        if node.tag.endswith("author"):
+            author = " ".join([name.text for nt in NAME_TYPES
+                               for name in list(node)
+                               if name.tag.endswith(nt) and name.text])
+        if node.tag.endswith("book-title") and node.text:
+            title = node.text
+        if node.tag.endswith("date") and node.text:
+            date = node.text
+    return author, title, date
+
+
+def parse_malformed_book(book, location):
+    '''
+    Tries to parse a book that violates XML rules. Writes to log if fails.
+    :param book: an opened file with a book
+    :param location: location of the book for logging and debugging purposes
+    :return: tuple with parsing results
+    '''
+    try:
+        book.seek(0)
+        first_line = str(book.readline(), encoding="utf-8")
+        encoding = re.search('encoding="([^"]*?)"', first_line).group(1)
+        book.seek(0)
+        desc = ""
+        while True:
+            desc += str(book.read(1024), encoding)
+            if "</title-info>" in desc:
+                desc = desc.split("<title-info>")[1].split("</title-info>")[0]
+                break
+        author = " ".join([i for i in
+                           [extract_tag_with_regex(nt, desc)
+                            for nt in NAME_TYPES]
+                           if i])
+        title = extract_tag_with_regex("book-title", desc)
+        date = extract_tag_with_regex("date", desc)
+        return author, title, date
+    except Exception as e:
+        with open("log.txt", "a") as log:
+            log.write(f"{location} ::: {e}\n")
+
+
+def extract_tag_with_regex(tag, text):
+    '''
+    Looks up a node by tag, extracts its text.
+    :param tag: FB2 node tag
+    :param text: text of title-info node
+    :return: text of the looked up node or empty string if nothing is founs
+    '''
+    if f"<{tag}" in text:
+        result = re.search(f"<{tag}[^>]*?>([^<]*?)<", text)
+        if result:
+            return result.group(1)
+    return ""
 
 
 # ----------- SERVICE FUNCTIONS ----------- #
 
 
-def testing(book):
-    with open(book, "rb") as tbn:
-        parse_book(tbn)
+# parsing a single book
+def testing(book_path):
+    with open(book_path, "rb") as tbn:
+        parse_book(tbn, book_path)
 
 
+# writes elapsed time to stdout with an interval
 def timer():
     start = time.time()
     while True:
@@ -190,16 +224,14 @@ def timer():
 
 
 # ----------- TEST CONSTANTS ----------- #
+
+
 SMALLDIR = "C:\\Users\\fatsu\\PycharmProjects\\fb2lib\\test"
 BIGDIR = "C:\\Users\\fatsu\\Downloads\\_Lib.rus.ec - Официальная"
 
 
 if __name__ == "__main__":
+    print("Начинаем парсить...")
     start = time.time()
-    x = Thread(target=timer, daemon=True)
-    x.start()
-    parse_manager(test_path=SMALLDIR)
-
-    print(f"Time elapsed: {time.time() - start}")
-
-    # print(timeit.timeit(testing, number=100000))
+    parse_manager()
+    print(f"Прошло секунд: {int(time.time() - start)}")
