@@ -28,13 +28,15 @@ def adder(books_found, update):
     print(f"Пишем {len(books_found)} книг в бд... ", end="")
     conn, cursor = connect()
     if update:
-        cursor.executemany("INSERT OR REPLACE INTO books(str_repr, author, title, bookdate)"
+        cursor.executemany("INSERT OR REPLACE INTO"
+                           "books(str_repr, author, title, bookdate)"
                            "VALUES (?,?,?,?)",
                            books_found)
     else:
-        cursor.executemany("INSERT OR IGNORE INTO books(str_repr, author, title, bookdate)"
-                       "VALUES (?,?,?,?)",
-                       books_found)
+        cursor.executemany("INSERT OR IGNORE INTO"
+                           "books(str_repr, author, title, bookdate)"
+                           "VALUES (?,?,?,?)",
+                           books_found)
     conn.commit()
     conn.close()
     print("готово!")
@@ -108,11 +110,4 @@ def deleter(args):
 
 
 if __name__ == "__main__":
-    connect(create=True)
-    # co, cu = connect()
-    # search_copy(cu)
-    # co.commit()
-    # co.close()
-    # c = cu.execute("SELECT rowid, * FROM books WHERE bookdate = 2004")
-    # for i in c:
-    #     print(i)
+    connect()
