@@ -1,3 +1,5 @@
+**Requires Python 3.7!**
+
 # fb2lib
 Course project for EPAM Python course
 
@@ -17,5 +19,3 @@ In interactive shell:
 and so on.
 
 ``seeker.py`` supports full-text search (include ``-f`` flag when calling it)
-
-**Requires Python 3.7!**
