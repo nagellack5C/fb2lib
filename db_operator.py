@@ -1,5 +1,6 @@
 import sqlite3
 
+create = False
 
 def connect():
     '''
@@ -11,12 +12,10 @@ def connect():
     cursor = conn.cursor()
     cursor.execute("""CREATE TABLE IF NOT EXISTS books
                       (str_repr TEXT PRIMARY KEY,
-                       author TEXT, title TEXT, bookdate INT)
-                   """)
+                       author TEXT, title TEXT, bookdate INT)""")
     cursor.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS searchable_books
     USING FTS5(id, str_repr)
     """)
-    conn.commit()
     return conn, cursor
 
 
@@ -29,13 +28,13 @@ def adder(books_found, update):
     conn, cursor = connect()
     if update:
         cursor.executemany("INSERT OR REPLACE INTO"
-                           "books(str_repr, author, title, bookdate)"
-                           "VALUES (?,?,?,?)",
+                           " books(str_repr, author, title, bookdate)"
+                           " VALUES (?,?,?,?)",
                            books_found)
     else:
         cursor.executemany("INSERT OR IGNORE INTO"
-                           "books(str_repr, author, title, bookdate)"
-                           "VALUES (?,?,?,?)",
+                           " books(str_repr, author, title, bookdate)"
+                           " VALUES (?,?,?,?)",
                            books_found)
     conn.commit()
     conn.close()
@@ -47,7 +46,7 @@ def search_copy():
     cursor, conn = connect()
     cursor.execute("DELETE FROM searchable_books")
     cursor.execute("INSERT INTO searchable_books(id, str_repr)"
-                   "SELECT rowid, str_repr FROM books ")
+                   " SELECT rowid, str_repr FROM books ")
     cursor.commit()
     conn.close()
     print("Готово!")
@@ -110,4 +109,5 @@ def deleter(args):
 
 
 if __name__ == "__main__":
+    create = True
     connect()

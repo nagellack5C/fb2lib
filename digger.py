@@ -76,6 +76,7 @@ def parse_manager(test_path=None):
     for parsed_book in pg:
         counter += 1
         if counter % COUNTER_THRESHOLD == 0:
+            # print(parsed_book)
             print(counter)
         if parsed_book:
             # creating single-string book representation by joining all
