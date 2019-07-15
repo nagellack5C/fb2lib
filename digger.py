@@ -1,5 +1,3 @@
-'''asdfasf'''
-
 import re
 import os
 import gzip
