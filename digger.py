@@ -1,3 +1,5 @@
+'''asdfasf'''
+
 import re
 import os
 import gzip
@@ -6,13 +8,18 @@ import time
 from argparse import ArgumentParser
 from contextlib import contextmanager
 from xml.etree import ElementTree as etree
-from db_operator import adder, get_reprs
+from db_operator import adder, search_copy
 
 
 # ----------- SETUP ----------- #
 
+desc = '''
+Запустите скрипт с флагом -s для сканирования директории и всех поддиректорий,
+с флагом -a для сканирования одного файла. Используйте флаг -u для обновления
+информации о записях.
+'''
 
-parser = ArgumentParser()
+parser = ArgumentParser(description=desc)
 path_group = parser.add_mutually_exclusive_group()
 path_group.add_argument("-s", dest="dirpath")
 path_group.add_argument("-a", dest="bookpath")
@@ -67,12 +74,7 @@ def parse_manager(test_path=None):
     '''
     counter = 0
     pg = parseman_gen(test_path)
-    books_found = []  # will be a set if update flag is set
-    if args["update"]:
-        # loading single-string book representations into memory
-        # is used to check if book was already parsed
-        reprs = get_reprs()
-        books_found = set()
+    books_found = []
     for parsed_book in pg:
         counter += 1
         if counter % COUNTER_THRESHOLD == 0:
@@ -82,18 +84,12 @@ def parse_manager(test_path=None):
             # parsed info, then combining it with the parsed info for
             # faster insertion
             parsed_book = (" ".join([i for i in parsed_book]),) + parsed_book
-            if args["update"] and parsed_book[0] in reprs:
-                continue
-            books_found.add(parsed_book) if args["update"]\
-                else books_found.append(parsed_book)
+            books_found.append(parsed_book)
         if len(books_found) > DB_WRITING_THRESHOLD:
-            adder(books_found)
-            if args["update"]:
-                reprs.update(books_found)
-                books_found = set()
-            else:
-                books_found = []
-    adder(books_found)
+            adder(books_found, True)
+            books_found = []
+    adder(books_found, True)
+    search_copy()
 
 
 def parse_book(book, location):
